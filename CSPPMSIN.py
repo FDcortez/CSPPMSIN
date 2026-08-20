@@ -211,6 +211,41 @@ if peso_total_filtro == 0: peso_total_filtro = 1
 ev_real_acumulado = (pd.to_numeric(df_filtrado['Avance_Fisico_Pct'], errors='coerce').fillna(0) / 100 * df_filtrado['Duracion_Dias']).sum()
 ev_real_pct = ev_real_acumulado / peso_total_filtro
 
+# 3.4 Procesamiento Curvas S y KPIs
+df_curvas = procesar_serie_tiempo_evm(df_filtrado, fecha_corte)
+pv_val, ev_val, sv_val, spi_val = calcular_kpis_a_la_fecha(df_curvas, fecha_corte)
+
+# Cálculo de KPI Estático sin dilución (Verdad Absoluta)
+peso_total_filtro = df_filtrado['Duracion_Dias'].sum()
+if peso_total_filtro == 0: peso_total_filtro = 1
+ev_real_acumulado = (pd.to_numeric(df_filtrado['Avance_Fisico_Pct'], errors='coerce').fillna(0) / 100 * df_filtrado['Duracion_Dias']).sum()
+ev_real_pct = ev_real_acumulado / peso_total_filtro
+
+# NUEVO: Cálculo de Proyección Estocástica de Fin (EACt)
+fechas_ini = df_filtrado['Inicio_Planificado'].dropna()
+fechas_fin = df_filtrado['Fin_Planificado'].dropna()
+
+if not fechas_ini.empty and not fechas_fin.empty:
+    inicio_plan_proy = fechas_ini.min().date()
+    fin_plan_proy = fechas_fin.max().date()
+    pd_dias = (fin_plan_proy - inicio_plan_proy).days
+    
+    if ev_real_pct >= 0.99:
+        str_proyeccion = "Terminado"
+        color_proy = "#2ca02c" # Verde
+    elif spi_val > 0.10: # Límite para evitar fechas proyectadas a 10 años
+        eac_t_dias = pd_dias / spi_val
+        fecha_fin_proyectada = inicio_plan_proy + timedelta(days=int(eac_t_dias))
+        str_proyeccion = fecha_fin_proyectada.strftime('%d/%m/%Y')
+        # Pinta en rojo si la fecha proyectada supera la fecha de fin planificada base
+        color_proy = "#d62728" if fecha_fin_proyectada > fin_plan_proy else "#1f77b4"
+    else:
+        str_proyeccion = "SPI Crítico"
+        color_proy = "#d62728" # Rojo Alerta
+else:
+    str_proyeccion = "Sin Línea Base"
+    color_proy = "#7f7f7f" # Gris
+
 tareas_sin_lb = df_filtrado[['Inicio_Planificado', 'Fin_Planificado']].isna().any(axis=1).sum()
 
 texto_corte = f"Corte al {fecha_corte.strftime('%d/%m/%Y')}"
@@ -221,15 +256,25 @@ elif frecuencia == "Mensual": texto_corte = f"Corte: {mes_seleccionado} ({fecha_
 # 4. RENDERIZADO DEL DASHBOARD (LAYOUT ASIMÉTRICO)
 # ==========================================
 
-st.markdown(f"""
+# Encabezado principal con KPIs gemelos anclados a la derecha (Sin indentación para evitar bug de Markdown)
+html_encabezado = f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-    <h2 style="margin: 0 !important; padding: 0 !important;"><i class='fas fa-industry' style='color:#1f77b4; margin-right: 10px;'></i>{depto_seleccionado} <span style='font-size: 13px; font-weight: normal; color: gray; margin-left: 10px;'>| {texto_corte}</span></h2>
-    <div style="background-color: rgba(44, 160, 44, 0.08); border: 1px solid #2ca02c; padding: 6px 16px; border-radius: 6px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-        <span style="font-size: 11px; font-weight: 700; color: #2ca02c; text-transform: uppercase; letter-spacing: 0.5px;">EV Real Acumulado (Hoy)</span><br>
-        <span style="font-size: 24px; font-weight: bold; color: #2ca02c; line-height: 1.1;">{ev_real_pct*100:.1f}%</span>
-    </div>
+<h2 style="margin: 0 !important; padding: 0 !important; flex-grow: 1;"><i class='fas fa-industry' style='color:#1f77b4; margin-right: 10px;'></i>{depto_seleccionado} <span style='font-size: 13px; font-weight: normal; color: gray; margin-left: 10px;'>| {texto_corte}</span></h2>
+<div style="display: flex; gap: 12px;">
+<div style="background-color: {color_proy}12; border: 1px solid {color_proy}; padding: 6px 16px; border-radius: 6px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+<span style="font-size: 11px; font-weight: 700; color: {color_proy}; text-transform: uppercase; letter-spacing: 0.5px;">Proyección Fin (EACt)</span><br>
+<span style="font-size: 20px; font-weight: bold; color: {color_proy}; line-height: 1.1;">{str_proyeccion}</span>
 </div>
-""", unsafe_allow_html=True)
+<div style="background-color: rgba(44, 160, 44, 0.08); border: 1px solid #2ca02c; padding: 6px 16px; border-radius: 6px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+<span style="font-size: 11px; font-weight: 700; color: #2ca02c; text-transform: uppercase; letter-spacing: 0.5px;">EV Real Acumulado</span><br>
+<span style="font-size: 24px; font-weight: bold; color: #2ca02c; line-height: 1.1;">{ev_real_pct*100:.1f}%</span>
+</div>
+</div>
+</div>
+"""
+
+st.markdown(html_encabezado, unsafe_allow_html=True)
+
 if tareas_sin_lb > 0: st.warning(f"Alerta: {tareas_sin_lb} tareas sin línea base distorsionando PV.")
 
 # --- CUADRÍCULA PRINCIPAL (75% Izq / 25% Der) ---
