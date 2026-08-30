@@ -400,6 +400,7 @@ with col_main:
     m_atr = ((df_filtrado['Inicio_Planificado'] <= corte_ts) & (df_filtrado['Inicio_Real'].isna() | (df_filtrado['Inicio_Real'] > corte_ts))).sum()
     m_inc = ((df_filtrado['Fin_Planificado'] >= inicio_ts) & (df_filtrado['Fin_Planificado'] <= corte_ts) & (df_filtrado['Avance_Fisico_Pct'] < 100)).sum()
     m_v_acum = ((df_filtrado['Fin_Planificado'] <= corte_ts) & (df_filtrado['Avance_Fisico_Pct'] < 100)).sum()
+    m_sin_iniciar = (pd.to_numeric(df_filtrado['Avance_Fisico_Pct'], errors='coerce').fillna(0) == 0).sum()
 
     o1, o2, o3, o4, o5 = st.columns(5)
     with o1: st.markdown(card_html("Term. (Total)", m_t_acum, "fas fa-check-double", "blue"), unsafe_allow_html=True)
@@ -413,7 +414,39 @@ with col_main:
     with o7: st.markdown(card_html("No Inic.", m_atr, "fas fa-pause-circle", "orange"), unsafe_allow_html=True)
     with o8: st.markdown(card_html(f"Incumplidas", m_inc, "fas fa-times-circle", "red"), unsafe_allow_html=True)
     with o9: st.markdown(card_html("Vencidas", m_v_acum, "fas fa-calendar-xmark", "red"), unsafe_allow_html=True)
-    with o10: st.markdown(card_html("Sin L. Base", tareas_sin_lb, "fas fa-triangle-exclamation", "red"), unsafe_allow_html=True)
+    with o10: st.markdown(card_html("Sin Iniciar", m_sin_iniciar, "fas fa-hourglass-start", "gray"), unsafe_allow_html=True)
+
+    # ==========================================
+    # NUEVA SECCIÓN: SIMULACIÓN DE HH Y TAREAS PENDIENTES
+    # ==========================================
+    st.markdown("<hr style='margin-top: 15px; margin-bottom: 15px;'>", unsafe_allow_html=True)
+    st.markdown("<h5><i class='fas fa-users-cog' style='color:#7f7f7f; margin-right: 8px;'></i> Fuerza Laboral y Tareas Pendientes (Vista Previa)</h5>", unsafe_allow_html=True)
+    
+    # Mensaje de advertencia temporal para la gerencia
+    st.caption("⚠️ Nota: Los valores de Horas-Hombre son una proyección estimada (basada en 8h/día por tarea) hasta que se implemente la carga estandarizada de recursos en MS Project.")
+
+    # 1. Cálculos de Tareas Pendientes
+    hoy_ts = pd.Timestamp(fecha_hoy)
+    tareas_hoy_plan = ((df_filtrado['Inicio_Planificado'] == hoy_ts) & (df_filtrado['Inicio_Real'].isna() | (df_filtrado['Inicio_Real'] > hoy_ts))).sum()
+    tareas_pend_total = (df_filtrado['Inicio_Real'].isna()).sum()
+
+    # 2. Cálculos de HH (Simuladas usando Duracion_Dias * 8)
+    # Cuando MS Project esté configurado y evm2.py extraiga 'Horas_Hombre', 
+    # simplemente cambia "(df_filtrado['Duracion_Dias'] * 8)" por "df_filtrado['Horas_Hombre']"
+    hh_planificadas = (df_filtrado['Duracion_Dias'] * 8).sum()
+    
+    avance_decimal = pd.to_numeric(df_filtrado['Avance_Fisico_Pct'], errors='coerce').fillna(0) / 100
+    hh_cumplidas = ((df_filtrado['Duracion_Dias'] * 8) * avance_decimal).sum()
+    
+    hh_restantes = hh_planificadas - hh_cumplidas
+
+    # 3. Renderizado de Tarjetas
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1: st.markdown(card_html("Inician Hoy", tareas_hoy_plan, "fas fa-calendar-day", "orange"), unsafe_allow_html=True)
+    with c2: st.markdown(card_html("Por Iniciar (Total)", tareas_pend_total, "fas fa-list-ul", "orange"), unsafe_allow_html=True)
+    with c3: st.markdown(card_html("HH Planificadas", f"{hh_planificadas:,.0f} h", "fas fa-users", "blue"), unsafe_allow_html=True)
+    with c4: st.markdown(card_html("HH Cumplidas", f"{hh_cumplidas:,.0f} h", "fas fa-hard-hat", "green"), unsafe_allow_html=True)
+    with c5: st.markdown(card_html("HH Restantes", f"{hh_restantes:,.0f} h", "fas fa-clock", "gray"), unsafe_allow_html=True)
 
 with col_right:
     # 3. COLUMNA DERECHA (Curva S, Variación y Notepad)
